@@ -6,6 +6,7 @@
 """
 
 import asyncio
+from app.db import models # noqa: F401
 from logging.config import fileConfig
 
 from sqlalchemy import pool
