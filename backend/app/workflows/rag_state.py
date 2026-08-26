@@ -4,12 +4,13 @@
 比 Pydantic 模型逐字段 copy_update 更轻量，且不需要为每次部分更新做校验。
 """
 
-from typing import TypedDict
+from typing import Literal, TypedDict
 from uuid import UUID
 
 from app.db.models import Message
 from app.retrieval.vector_retriever import RetrievedChunk
-
+# 4 选 1 路由策略：original 不改写、rewrite 改写、hyde 假设答案、multi_query 多子查询
+QueryRoute = Literal["original", "rewrite", "hyde", "multi_query"]
 
 class RAGState(TypedDict, total=False):
     # 输入
@@ -21,6 +22,13 @@ class RAGState(TypedDict, total=False):
 
     # normalize_query 产出（本章 = question）
     query: str
+    
+    # route_query 产出
+    # route：实际采用的策略；query：覆盖 normalize_query 的透传 query（rewrite/hyde 路径下变成改写文本）
+    route: QueryRoute
+    rewritten_query: str | None
+    hyde_answer: str | None
+    multi_queries: list[str] | None
 
     # retrieve 产出
     retrieved_chunks: list[RetrievedChunk]
