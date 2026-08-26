@@ -6,8 +6,9 @@ from uuid import UUID
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
-from app.db.models import DocumentChunk
+from app.db.models import Document, DocumentChunk
 
 
 @dataclass(frozen=True)
@@ -72,6 +73,30 @@ class DocumentChunkRepository:
             DocumentChunk.document_id == document_id,
         )
         return (await self.session.execute(stmt)).scalar_one_or_none()
+
+    async def vector_search(
+        self,
+        query_embedding: list[float],
+        top_k: int,
+    ) -> list[tuple[DocumentChunk, float]]:
+        """按 cosine 距离做 Top-K 向量检索。
+
+        - 仅检索状态为 ready 的文档（避免拿到尚未完成入库的脏 chunk）
+        - 返回 (chunk, distance) 列表，distance 越小越相似（pgvector cosine_distance）
+        - 用 selectinload 把所属 Document 一并加载，方便上层直接读 document.name
+          而不会再发 N 次 lazy load 查询
+        """
+        distance = DocumentChunk.embedding.cosine_distance(query_embedding)
+        stmt = (
+            select(DocumentChunk, distance.label("distance"))
+            .join(Document, Document.id == DocumentChunk.document_id)
+            .where(Document.status == "ready")
+            .order_by(distance.asc())
+            .limit(top_k)
+            .options(selectinload(DocumentChunk.document))
+        )
+        rows = (await self.session.execute(stmt)).all()
+        return [(chunk, float(dist)) for chunk, dist in rows]
 
     async def get_stats(self, document_id: UUID) -> ChunkStats | None:
         """一条聚合 SQL 拿到 count/avg/min/max，避免在 Python 侧再扫一遍 chunks。"""
