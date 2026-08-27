@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.db.models import Document, DocumentChunk
+from app.ingestion.tokenizer import tokenize_for_query
 
 
 @dataclass(frozen=True)
@@ -97,6 +98,52 @@ class DocumentChunkRepository:
         )
         rows = (await self.session.execute(stmt)).all()
         return [(chunk, float(dist)) for chunk, dist in rows]
+
+    async def fulltext_search(
+        self,
+        query: str,
+        top_k: int,
+        strict: bool = True,
+    ) -> list[tuple[DocumentChunk, float]]:
+        """中文全文检索 Top-K：jieba 分词 → tsquery → ts_rank。
+
+        - 查询侧与入库侧同一个 tokenize，保证两侧词条一致。
+        - strict=True：plainto_tsquery 把词条 AND 起来（精确匹配，命中即高相关）；
+          strict=False：词条间改 OR（宽松召回，供上层做"先严后宽"兜底）。
+          zhparser 版只需 AND（词性过滤后词条少）；jieba 长查询词条多，
+          严格 AND 容易零命中，所以保留 OR 兜底通道。
+        - 仅命中 status='ready' 文档，避免拿到尚未完成入库的脏 chunk。
+        - 返回 (chunk, ts_rank) 列表，ts_rank 越大越相关（无固定上界，同查询内可比）。
+        """
+        tokens = tokenize_for_query(query)
+        if not tokens:
+            return []
+        if strict:
+            tsquery = func.plainto_tsquery("simple", " ".join(tokens))
+        else:
+            # OR 语义：单引号包裹词条避免保留字符破坏语法（plainto 不支持 OR）
+            or_text = " | ".join(
+                "'" + t.replace("'", " ").replace("\\", " ").strip() + "'"
+                for t in tokens
+                if t.replace("'", " ").replace("\\", " ").strip()
+            )
+            if not or_text:
+                return []
+            tsquery = func.to_tsquery("simple", or_text)
+        rank_expr = func.ts_rank(DocumentChunk.content_tsv, tsquery)
+        stmt = (
+            select(DocumentChunk, rank_expr.label("rank"))
+            .join(Document, Document.id == DocumentChunk.document_id)
+            .where(
+                Document.status == "ready",
+                DocumentChunk.content_tsv.op("@@")(tsquery),
+            )
+            .order_by(rank_expr.desc())
+            .limit(top_k)
+            .options(selectinload(DocumentChunk.document))
+        )
+        rows = (await self.session.execute(stmt)).all()
+        return [(chunk, float(rank)) for chunk, rank in rows]
 
     async def get_stats(self, document_id: UUID) -> ChunkStats | None:
         """一条聚合 SQL 拿到 count/avg/min/max，避免在 Python 侧再扫一遍 chunks。"""

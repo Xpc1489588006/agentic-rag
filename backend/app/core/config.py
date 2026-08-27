@@ -65,6 +65,12 @@ class Settings(BaseSettings):
     # 拒答阈值：cosine similarity（= 1 - cosine_distance）的下限
     # Top-K 中最高分仍低于此值，直接拒答，不调 LLM
     retrieval_min_score: float = 0.6
+    # ===== 混合检索 =====
+    # 每路（向量 / 关键词）召回数量；设计文档建议候选 20-50
+    # 取 20 兼顾召回率与 RRF 融合开销；融合后再按 retrieval_top_k 截取交给 LLM
+    retrieval_recall_top_k: int = 20
+    # RRF 平滑常数，业界默认 60；越小越偏向高排名条目
+    rrf_k: int = 60
     # 多轮窗口：load_context 节点取最近多少轮塞进 prompt
     chat_history_window: int = 5
 

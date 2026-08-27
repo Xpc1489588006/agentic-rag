@@ -12,14 +12,16 @@ from uuid import UUID, uuid4
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     BigInteger,
+    Computed,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
+from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR, UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.config import settings
@@ -89,6 +91,16 @@ class DocumentChunk(Base):
         index=True,
     )
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    # jieba 分词后空格拼接的文本，与 content 同源、入库时一并写入；
+    # 全文检索不直接用它，而是用下面的生成列 content_tsv
+    content_tokens: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 生成列：由 content_tokens 自动推导，永远与分词结果一致；
+    # simple 解析器按空格切词，与入库侧 jieba 空格拼接格式配套，无需中文扩展（zhparser）
+    content_tsv: Mapped[str | None] = mapped_column(
+        TSVECTOR,
+        Computed("to_tsvector('simple', coalesce(content_tokens, ''))", persisted=True),
+        nullable=False,
+    )
     # 维度由 settings.embedding_dim 控制，迁移时同步固化
     embedding: Mapped[list[float]] = mapped_column(Vector(settings.embedding_dim), nullable=False)
 
@@ -106,6 +118,11 @@ class DocumentChunk(Base):
     )
 
     document: Mapped[Document] = relationship(back_populates="chunks")
+
+    __table_args__ = (
+        # 全文检索走 GIN；与向量检索的 HNSW 互补，混合召回各自走各自的索引
+        Index("ix_document_chunks_content_tsv", "content_tsv", postgresql_using="gin"),
+    )
 
 class MessageRole(str, Enum):
     """消息角色。"""
@@ -201,5 +218,8 @@ class AnswerCitation(Base):
     document_name: Mapped[str] = mapped_column(String(512), nullable=False)
     page_no: Mapped[int | None] = mapped_column(Integer, nullable=True)
     quote: Mapped[str] = mapped_column(Text, nullable=False)
+    # 混合检索调试元数据：sources / vector_rank / keyword_rank / *_score / rrf_score
+    # 用 JSONB 而非拆列，后续扩展字段时不用再加列，schema 不稳定时更友好；旧数据为 NULL
+    retrieval_meta: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     message: Mapped[Message] = relationship(back_populates="citations")

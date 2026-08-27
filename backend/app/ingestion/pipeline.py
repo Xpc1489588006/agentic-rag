@@ -12,6 +12,7 @@ from app.db.repositories.chunk_repo import DocumentChunkRepository
 from app.db.repositories.document_repo import DocumentRepository
 from app.db.session import AsyncSessionLocal
 from app.ingestion import embedder, parser, splitter
+from app.ingestion.tokenizer import tokenize_for_index
 from app.storage.file_service import get_file_service
 
 logger = get_logger(__name__)
@@ -64,6 +65,9 @@ async def ingest_document(document_id: UUID) -> None:
                     DocumentChunk(
                         document_id=document_id,
                         content=c.page_content,
+                        # 全文检索分词列：与向量同源同批写入，保证两路召回基座一致；
+                        # content_tsv 生成列由数据库自动推导，无需显式赋值
+                        content_tokens=tokenize_for_index(c.page_content),
                         embedding=vec,
                         page_no=c.metadata.get("page_no"),
                         section_path=c.metadata.get("section_path"),
