@@ -80,6 +80,13 @@ class Settings(BaseSettings):
     # Multi-Query 策略生成的子查询数量，过大会增加 embedding 成本
     multi_query_count: int = 3
 
+    # ===== Agentic RAG =====
+    # 关掉后图退化为单轮检索，作为单轮  v s agent 循环的对比开关
+    agent_loop_enabled: bool = True
+    # 最大检索轮次（含首轮）。LLM 决策最多触发 max_rounds-1 次再检索，避免循环调用
+    agent_max_rounds: int = 3
+
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
