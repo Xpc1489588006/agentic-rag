@@ -17,7 +17,7 @@ from app.db.repositories.chunk_repo import DocumentChunkRepository
 from app.retrieval.vector_retriever import RetrievedChunk
 
 
-class TextRetriever:
+class KeywordRetriever:
     def __init__(self, session: AsyncSession) -> None:
         self.chunk_repo = DocumentChunkRepository(session)
 

@@ -15,8 +15,9 @@ from uuid import UUID
 
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.core.observability import traceable
 from app.db.session import AsyncSessionLocal
-from app.retrieval.text_retriever import TextRetriever
+from app.retrieval.keyword_retriever import KeywordRetriever
 from app.retrieval.vector_retriever import RetrievedChunk, VectorRetriever
 
 logger = get_logger(__name__)
@@ -30,7 +31,7 @@ class HybridRetriever:
       把底层 asyncpg 连接搞成 InFailedSQLTransactionError，污染调用方事务
     - 检索过程纯只读，与调用方的写事务（落库 user / assistant 消息）天然解耦
     """
-
+    @traceable(name="HybridRetriever.search", run_type="retriever")
     async def search(
         self,
         query: str,
@@ -41,7 +42,7 @@ class HybridRetriever:
         """两路并发召回（各自最多 recall_top_k）→ RRF 融合 → 取 final_top_k。"""
         vector_hits, keyword_hits = await asyncio.gather(
             self._safe_search(VectorRetriever, query, recall_top_k, "vector"),
-            self._safe_search(TextRetriever, query, recall_top_k, "keyword"),
+            self._safe_search(KeywordRetriever, query, recall_top_k, "keyword"),
         )
         fused = rrf_fuse(
             vector_hits,
@@ -57,7 +58,7 @@ class HybridRetriever:
 
     @staticmethod
     async def _safe_search(
-        retriever_cls: type[VectorRetriever] | type[TextRetriever],
+        retriever_cls: type[VectorRetriever] | type[KeywordRetriever],
         query: str,
         top_k: int,
         label: str,

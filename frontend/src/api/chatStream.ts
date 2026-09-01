@@ -11,6 +11,10 @@ import type { AgentStep, CitationRead, QueryRouteRead } from '@/client/types.gen
 
 export interface ChatStartEvent {
   type: 'start'
+  /** LangSmith trace_id；未启用观测时为 null */
+  traceId: string | null
+  /** LangSmith UI 跳转 URL；后端按 LANGSMITH_RUN_URL_PREFIX 拼好下发，未配置为 null */
+  traceUrl: string | null
 }
 export interface ChatQueryRouteEvent {
   type: 'query_route'
@@ -96,7 +100,11 @@ export async function streamChat({
         const data = msg.data ? JSON.parse(msg.data) : {}
         switch (msg.event) {
           case 'message_start':
-            onEvent({ type: 'start' })
+            onEvent({
+              type: 'start',
+              traceId: data.trace_id ?? null,
+              traceUrl: data.trace_url ?? null,
+            })
             break
           case 'query_route':
             onEvent({ type: 'query_route', queryRoute: data as QueryRouteRead })
@@ -110,7 +118,7 @@ export async function streamChat({
           case 'token':
             onEvent({ type: 'token', delta: data.delta ?? '' })
             break
-           case 'verify_result':
+          case 'verify_result':
             onEvent({
               type: 'verify_result',
               verified: Boolean(data.verified),

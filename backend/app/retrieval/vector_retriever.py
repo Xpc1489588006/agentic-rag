@@ -1,6 +1,6 @@
 """向量检索器：query → embedding → pgvector Top-K。
 
-作为 HybridRetriever 的一路输入，另一路是 TextRetriever（关键词），最终由 RRF 融合。
+作为 HybridRetriever 的一路输入，另一路是 KeywordRetriever（关键词），最终由 RRF 融合。
 """
 
 from dataclasses import dataclass, field
@@ -8,6 +8,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.observability import traceable
 from app.db.repositories.chunk_repo import DocumentChunkRepository
 from app.ingestion.embedder import get_embeddings
 
@@ -47,7 +48,7 @@ class RetrievedChunk:
 class VectorRetriever:
     def __init__(self, session: AsyncSession) -> None:
         self.chunk_repo = DocumentChunkRepository(session)
-
+    @traceable(name="VectorRetriever.search", run_type="retriever")
     async def search(self, query: str, top_k: int) -> list[RetrievedChunk]:
         # 单 query 走 aembed_query，DashScope 单条调用更直接
         embedding = await get_embeddings().aembed_query(query)

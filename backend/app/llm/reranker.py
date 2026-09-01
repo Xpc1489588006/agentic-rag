@@ -19,6 +19,7 @@ from app.core.config import settings
 from app.core.exceptions import ConfigurationError
 from app.core.logging import get_logger
 from app.retrieval.vector_retriever import RetrievedChunk
+from app.core.observability import traceable
 
 logger = get_logger(__name__)
 
@@ -37,7 +38,7 @@ class Reranker:
         if self._client is None:
             self._client = httpx.AsyncClient(timeout=settings.rerank_timeout)
         return self._client
-
+    @traceable(name="Reranker.rerank", run_type="tool")
     async def rerank(
         self, query: str, candidates: list[RetrievedChunk]
     ) -> list[RetrievedChunk]:
