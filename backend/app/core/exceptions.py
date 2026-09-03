@@ -1,7 +1,6 @@
 """业务异常基类与常用异常。
 
 约定：所有业务异常继承 AppException，由 api/error_handlers.py 统一转 HTTP 响应。
-后续章节会按需扩展 DocumentNotFoundError / PermissionDeniedError 等具体异常。
 """
 
 from http import HTTPStatus
@@ -28,6 +27,14 @@ class NotFoundError(AppException):
     http_status = HTTPStatus.NOT_FOUND
 
 
+class UnauthorizedError(AppException):
+    """未认证 / 凭证无效；前端拦截 401 会清登录态并跳转 /login。"""
+
+    code = "unauthorized"
+    message = "请先登录"
+    http_status = HTTPStatus.UNAUTHORIZED
+
+
 class PermissionDeniedError(AppException):
     code = "permission_denied"
     message = "无权访问该资源"
@@ -44,3 +51,10 @@ class ValidationError(AppException):
     code = "validation_error"
     message = "参数校验失败"
     http_status = HTTPStatus.BAD_REQUEST
+
+
+class ConflictError(AppException):
+    code = "conflict"
+    message = "资源冲突"
+    http_status = HTTPStatus.CONFLICT
+

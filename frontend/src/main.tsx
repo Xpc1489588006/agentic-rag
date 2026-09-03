@@ -8,6 +8,10 @@ import { router } from '@/routes'
 import 'antd/dist/reset.css'
 // 配置 fetch client 以及全局错误拦截器
 import '@/api/client'
+import { useAuthStore } from '@/stores/authStore'
+
+// 应用挂载前先从 localStorage 恢复登录态
+useAuthStore.getState().hydrate()
 
 const queryClient = new QueryClient({
   defaultOptions: {

@@ -3,6 +3,8 @@
 新增模型时务必把它 import 到此模块，alembic autogenerate 才能扫到。
 - 第 3 章：documents / document_chunks
 - 第 4 章：conversations / messages / answer_citations（会话与引用）
+- 第 10 章：evaluation_runs / evaluation_items
+- 第 11 章：users / roles / user_roles + documents.permission_tags/created_by + conversations.user_id
 """
 
 from datetime import datetime
@@ -13,6 +15,7 @@ from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    Column,
     Computed,
     DateTime,
     Float,
@@ -20,10 +23,11 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    Table,
     Text,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR, UUID as PGUUID
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, TSVECTOR, UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.config import settings
@@ -47,6 +51,94 @@ class DocumentStatus(str, Enum):
     FAILED = "failed"
 
 
+class UserStatus(str, Enum):
+    """用户启用状态。"""
+
+    ACTIVE = "active"
+    DISABLED = "disabled"
+
+
+# 用户 - 角色 多对多关系表。
+# 不抽成 ORM 类是因为本身没有业务字段，纯关系；用 Table 让 SQLAlchemy 自动处理。
+user_roles_table = Table(
+    "user_roles",
+    Base.metadata,
+    Column(
+        "user_id",
+        PGUUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column(
+        "role_id",
+        PGUUID(as_uuid=True),
+        ForeignKey("roles.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+)
+
+
+class User(Base):
+    """用户主表。"""
+
+    __tablename__ = "users"
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    username: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    # bcrypt hash，约 60 字符；预留 255 兼容未来切换算法
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[UserStatus] = mapped_column(
+        String(16), nullable=False, default=UserStatus.ACTIVE
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    roles: Mapped[list["Role"]] = relationship(
+        secondary=user_roles_table,
+        back_populates="users",
+        lazy="selectin",
+    )
+
+
+class Role(Base):
+    """RBAC 角色。
+
+    permission_tags：角色直接持有的权限标签数组；用户的有效权限 = 各角色 tags 的并集。
+    特殊值 "*" 表示通配（admin）。
+    """
+
+    __tablename__ = "roles"
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    name: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    description: Mapped[str] = mapped_column(String(256), nullable=False, default="")
+    permission_tags: Mapped[list[str]] = mapped_column(
+        ARRAY(String()), nullable=False, default=list, server_default="{}"
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    users: Mapped[list[User]] = relationship(
+        secondary=user_roles_table,
+        back_populates="roles",
+    )
+
+
 class Document(Base):
     __tablename__ = "documents"
 
@@ -66,6 +158,19 @@ class Document(Base):
         String(32), nullable=False, default=DocumentStatus.UPLOADING
     )
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # 空数组视为"公开"，任意登录用户可见可检索，
+    # 用于兼容之前上传的存量文档。
+    # 非空数组与用户有效权限标签做数组重叠匹配（admin 持 "*" 通配）。
+    permission_tags: Mapped[list[str]] = mapped_column(
+        ARRAY(String()), nullable=False, default=list, server_default="{}"
+    )
+    # 上传者；用户被硬删后该字段置 NULL，文档历史仍保留
+    created_by: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -137,9 +242,17 @@ class MessageRole(str, Enum):
 class Conversation(Base):
     __tablename__ = "conversations"
 
-    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
     title: Mapped[str] = mapped_column(String(256), nullable=False, default="新对话")
-    # user_id 第 11 章引入用户体系时再加列
+    # 第 11 章引入。SET NULL：用户被硬删后会话仍保留供管理员审计
+    user_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

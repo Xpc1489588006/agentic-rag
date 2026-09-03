@@ -120,6 +120,18 @@ class Settings(BaseSettings):
     # 包含 workspace/org 信息所以是私有的，配置后才下发跳转链接给前端
     langsmith_run_url_prefix: str = ""
 
+    # ===== 认证 =====
+    # JWT 签名密钥；为空时启动期打 ERROR 警告但不阻断（本地开发可后配）
+    # 生产部署务必改成足够长的随机串
+    jwt_secret: str = ""
+    jwt_algorithm: str = "HS256"
+    # token 默认 24 小时过期
+    jwt_expire_minutes: int = 1440
+
+    # 首次启动种子管理员账号；库内已有用户时跳过
+    default_admin_username: str = "admin"
+    default_admin_password: str = "admin"
+    default_admin_display_name: str = "管理员"
 
     @property
     def effective_rerank_api_key(self) -> str:

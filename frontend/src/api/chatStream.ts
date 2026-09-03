@@ -4,10 +4,12 @@
  * 用 @microsoft/fetch-event-source 而非原生 EventSource 的原因：
  * - 原生 EventSource 不支持 POST + JSON body，而我们的 SSE 入口是 POST
  * - 需要手动取消（用户切换页面 / 点"中止"）
+ * - 需要带 Authorization header；EventSource 也不支持自定义 header
  */
 
 import { fetchEventSource } from '@microsoft/fetch-event-source'
 import type { AgentStep, CitationRead, QueryRouteRead } from '@/client/types.gen'
+import { getAuthToken, useAuthStore } from '@/stores/authStore'
 
 export interface ChatStartEvent {
   type: 'start'
@@ -79,16 +81,30 @@ export async function streamChat({
   signal,
   onEvent,
 }: StreamChatParams): Promise<void> {
+  const token = getAuthToken()
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
+  }
   await fetchEventSource(
     `/api/conversations/${conversationId}/chat`,
     {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({ question }),
       signal,
       // 默认会在 tab 切换到后台时关闭连接，问答场景不希望中断
       openWhenHidden: true,
       async onopen(response) {
+        // 401 时与全局 HTTP 拦截器对齐：清登录态 + 跳登录页
+        if (response.status === 401) {
+          useAuthStore.getState().logout()
+          if (window.location.pathname !== '/login') {
+            const back = window.location.pathname + window.location.search
+            window.location.replace(`/login?back=${encodeURIComponent(back)}`)
+          }
+          throw new FatalSseError('请先登录')
+        }
         if (response.ok && response.headers.get('content-type')?.includes('text/event-stream')) {
           return
         }

@@ -1,5 +1,7 @@
 /** 文档原文件 URL 工具：与后端 GET /documents/{id}/file 对齐。 */
 
+import { getAuthToken } from '@/stores/authStore'
+
 const MARKDOWN_MIMES = new Set([
   'text/markdown',
   'text/x-markdown',
@@ -17,9 +19,10 @@ export function buildDocumentFileUrl(
   documentId: string,
   options: { download?: boolean } = {},
 ): string {
-  // 通过 vite proxy / nginx 转发到后端，无需写绝对地址
   const param = options.download ? '1' : '0'
-  return `/api/documents/${documentId}/file?download=${param}`
+  const token = getAuthToken()
+  const base = `/api/documents/${documentId}/file?download=${param}`
+  return token ? `${base}&token=${encodeURIComponent(token)}` : base
 }
 
 /** 浏览器是否能内联预览该 mime 类型。DOCX 不行。 */

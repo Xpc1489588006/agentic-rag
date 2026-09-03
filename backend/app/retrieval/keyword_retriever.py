@@ -1,6 +1,6 @@
 """关键词（全文）检索器：query → jieba 分词 → tsquery → ts_rank Top-K。
 
-接口与 VectorRetriever 对齐（都暴露 `search(query, top_k)`），
+接口与 VectorRetriever 对齐（都暴露 `search(query, top_k, *, permission_tags)`），
 便于 HybridRetriever 把两路当成对称输入做 RRF 融合。
 
 适用场景：制度名 / 接口名 / 产品型号 / 编号 / 专有名词等需要精确匹配的查询，
@@ -22,10 +22,20 @@ class KeywordRetriever:
         self.chunk_repo = DocumentChunkRepository(session)
 
     @traceable(name="KeywordRetriever.search", run_type="retriever")
-    async def search(self, query: str, top_k: int) -> list[RetrievedChunk]:
-        rows = await self.chunk_repo.fulltext_search(query, top_k, strict=True)
+    async def search(
+        self,
+        query: str,
+        top_k: int,
+        *,
+        permission_tags: list[str] | None = None,
+    ) -> list[RetrievedChunk]:
+        rows = await self.chunk_repo.fulltext_search(
+            query, top_k, strict=True, permission_tags=permission_tags
+        )
         if not rows:
-            rows = await self.chunk_repo.fulltext_search(query, top_k, strict=False)
+            rows = await self.chunk_repo.fulltext_search(
+                query, top_k, strict=False, permission_tags=permission_tags
+            )
         return [
             RetrievedChunk(
                 chunk_id=chunk.id,

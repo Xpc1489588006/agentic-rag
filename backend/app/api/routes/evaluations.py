@@ -1,10 +1,13 @@
-"""评测 API：run 列表 / 创建 / 删除、items 列表 / 详情 / 归因 PATCH、可用评测集列表。"""
+"""评测 API：run 列表 / 创建 / 删除、items 列表 / 详情 / 归因 PATCH、可用评测集列表。
+
+整组路由要求 CurrentAdmin（评测涉及全库数据与生产环境调参）。
+"""
 
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Query, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Response
 
-from app.api.deps import DbSession
+from app.api.deps import DbSession, get_current_admin
 from app.api.schemas.evaluations import (
     BadCaseCategoryValue,
     DatasetInfo,
@@ -19,7 +22,11 @@ from app.api.schemas.evaluations import (
 )
 from app.services.evaluation_service import EvaluationService, execute_evaluation_run
 
-router = APIRouter(prefix="/evaluations", tags=["evaluations"])
+router = APIRouter(
+    prefix="/evaluations",
+    tags=["evaluations"],
+    dependencies=[Depends(get_current_admin)],
+)
 
 
 @router.get(

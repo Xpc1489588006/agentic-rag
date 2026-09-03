@@ -24,6 +24,10 @@ class DocumentRead(BaseModel):
     size: int
     status: DocumentStatusValue
     error_message: str | None = None
+    # 空数组视为"公开"；非空数组与用户有效权限标签做重叠匹配
+    permission_tags: list[str] = Field(default_factory=list)
+    # 上传者 user_id；用户被硬删后置 None
+    created_by: UUID | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -33,6 +37,12 @@ class DocumentListResponse(BaseModel):
     total: int
     page: int = Field(ge=1)
     page_size: int = Field(ge=1, le=100)
+
+
+class DocumentPermissionTagsUpdate(BaseModel):
+    """admin 改文档可见性标签的请求体。"""
+
+    permission_tags: list[str] = Field(default_factory=list)
 
 
 class DocumentChunkRead(BaseModel):
