@@ -83,7 +83,6 @@ export function LoginPage() {
           type="secondary"
           style={{ marginTop: 8, marginBottom: 0, fontSize: 12, textAlign: 'center' }}
         >
-          首次部署默认账号 admin / admin，登录后请尽快修改
         </Typography.Paragraph>
       </Card>
     </div>
