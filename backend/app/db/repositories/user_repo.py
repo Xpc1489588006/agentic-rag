@@ -20,6 +20,20 @@ class UserRepository:
         # roles 走 lazy="selectin" 自动预加载，这里 session.get 直接拿即可
         return await self.session.get(User, user_id)
 
+    async def get_fresh(self, user_id: UUID) -> User | None:
+        """commit 后重新查一次，确保列属性与 roles 都是新鲜值。
+
+        commit 默认会把对象全部属性置为 expired；如果只 refresh 关系
+        （attribute_names=["roles"]）列属性仍是过期态，序列化时同步访问
+        会触发隐式 IO 报 MissingGreenlet。这里用显式 selectinload 一次查齐。
+        """
+        stmt = (
+            select(User)
+            .where(User.id == user_id)
+            .options(selectinload(User.roles))
+        )
+        return (await self.session.execute(stmt)).scalar_one_or_none()
+
     async def get_by_username(self, username: str) -> User | None:
         stmt = (
             select(User)

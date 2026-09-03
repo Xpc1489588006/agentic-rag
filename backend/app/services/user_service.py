@@ -55,9 +55,13 @@ class UserService:
             roles = await self.role_repo.get_many(list(role_ids))
             user.roles = roles
         await self.user_repo.add(user)
+        # commit 会把属性全部置为过期，先缓存主键供重新查询用
+        user_id = user.id
         await self.session.commit()
-        await self.session.refresh(user, attribute_names=["roles"])
-        return user
+        fresh = await self.user_repo.get_fresh(user_id)
+        if fresh is None:
+            raise NotFoundError("用户不存在")
+        return fresh
 
     async def update_user(
         self,
@@ -80,16 +84,21 @@ class UserService:
                 raise ValidationError("密码长度至少 4 位")
             user.password_hash = hash_password(password)
         await self.session.commit()
-        await self.session.refresh(user, attribute_names=["roles"])
-        return user
+        # 重新查一次：commit 后列属性均已过期，直接序列化会 MissingGreenlet
+        fresh = await self.user_repo.get_fresh(user_id)
+        if fresh is None:
+            raise NotFoundError("用户不存在")
+        return fresh
 
     async def set_roles(self, user_id: UUID, role_ids: Sequence[UUID]) -> User:
         user = await self.get_user(user_id)
         roles = await self.role_repo.get_many(list(role_ids))
         await self.user_repo.set_roles(user, roles)
         await self.session.commit()
-        await self.session.refresh(user, attribute_names=["roles"])
-        return user
+        fresh = await self.user_repo.get_fresh(user_id)
+        if fresh is None:
+            raise NotFoundError("用户不存在")
+        return fresh
 
     async def delete_user(self, user_id: UUID) -> None:
         user = await self.get_user(user_id)

@@ -16,6 +16,11 @@ class RoleRepository:
     async def get_by_id(self, role_id: UUID) -> Role | None:
         return await self.session.get(Role, role_id)
 
+    async def get_fresh(self, role_id: UUID) -> Role | None:
+        """commit 后重新查一次，避免序列化过期属性触发 MissingGreenlet。"""
+        stmt = select(Role).where(Role.id == role_id)
+        return (await self.session.execute(stmt)).scalar_one_or_none()
+
     async def get_by_name(self, name: str) -> Role | None:
         stmt = select(Role).where(Role.name == name)
         return (await self.session.execute(stmt)).scalar_one_or_none()

@@ -44,8 +44,13 @@ class RoleService:
             permission_tags=_normalize_tags(permission_tags),
         )
         await self.repo.add(role)
+        # commit 会把属性全部置为过期，先缓存主键供重新查询用
+        role_id = role.id
         await self.session.commit()
-        return role
+        fresh = await self.repo.get_fresh(role_id)
+        if fresh is None:
+            raise NotFoundError("角色不存在")
+        return fresh
 
     async def update_role(
         self,
@@ -61,7 +66,11 @@ class RoleService:
         if permission_tags is not None:
             role.permission_tags = _normalize_tags(permission_tags)
         await self.session.commit()
-        return role
+        # 重新查一次：commit 后列属性均已过期，直接序列化会 MissingGreenlet
+        fresh = await self.repo.get_fresh(role_id)
+        if fresh is None:
+            raise NotFoundError("角色不存在")
+        return fresh
 
     async def delete_role(self, role_id: UUID) -> None:
         role = await self.get_role(role_id)
