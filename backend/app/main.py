@@ -2,7 +2,7 @@
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.routes import chat, documents, health
+from app.api.routes import chat, documents, evaluations,health
 from app.api.error_handlers import register_error_handlers
 from app.core.config import settings
 from app.core.logging import configure_logging, get_logger
@@ -29,6 +29,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router, prefix="/api")
     app.include_router(documents.router, prefix="/api")
     app.include_router(chat.router, prefix="/api")
+    app.include_router(evaluations.router, prefix="/api")
 
     logger.info("app initialized: %s", settings.app_name)
     return app
